@@ -5,31 +5,81 @@
 `CatBoostClassifier`, подбирает гиперпараметры через Optuna, строит графики через
 Plotly и готовит датасет в `LAB_IV/data/dataset`.
 
-## 1. Установить зависимости через uv
+## 1. Что изменилось в окружении
+
+Проект рассчитан на Python 3.14:
+
+```text
+requires-python = ">=3.14,<3.15"
+```
+
+Файл `.python-version` тоже закреплен на `3.14`, поэтому после удаления старого
+`.venv` uv должен создать новое окружение на Python 3.14.
+
+PyTorch разведен по платформам:
+
+- macOS arm64 получает CPU-сборку `torch` и `torchvision`;
+- Linux x86_64 и Windows AMD64 получают CUDA 12.6-сборку `torch` и
+  `torchvision`;
+- универсальный lock должен проверять обе целевые платформы через
+  `tool.uv.environments` и `tool.uv.required-environments`.
+
+Это убирает ошибку, когда macOS пытается установить wheel вида
+`torch==...+cu126`, который публикуется только для Linux/Windows.
+
+## 2. Переустановка окружения на macOS
 
 Запускайте команды из корня проекта:
 
 ```bash
 cd /Users/2madeira/dev/maga/second/ml
-```
-
-Если вы ведете зависимости через `pyproject.toml`, добавьте библиотеки так:
-
-```bash
-uv add numpy pandas scikit-learn plotly kaleido wordcloud optuna catboost kagglehub
-uv add --dev jupyter ipykernel spacy tqdm
+rm -rf .venv
+uv python install 3.14
 uv sync --dev
 ```
 
-Если вы хотите просто доустановить пакеты в уже созданное виртуальное окружение,
-можно использовать `uv pip`:
+На macOS `uv sync --dev` должен поставить CPU-версию PyTorch. CUDA на macOS не
+используется.
+
+Если `uv.lock` расходится с текущим `pyproject.toml`, uv при обычном
+`uv sync --dev` должен пересобрать lock. Если хочется сделать это явно:
 
 ```bash
-uv pip install numpy pandas scikit-learn plotly kaleido wordcloud optuna catboost kagglehub
-uv pip install jupyter ipykernel spacy tqdm
+uv lock
+uv sync --dev
 ```
 
-Зачем нужны основные библиотеки:
+## 3. Установка на машине с CUDA GPU
+
+На Linux x86_64 используйте те же команды:
+
+```bash
+cd /path/to/ml
+uv python install 3.14
+uv sync --dev
+```
+
+На Windows AMD64 команды аналогичные, но путь к проекту будет вашим локальным
+путем. Из-за marker-условий в `pyproject.toml` Linux/Windows-окружение будет
+брать PyTorch из индекса CUDA 12.6:
+
+```text
+https://download.pytorch.org/whl/cu126
+```
+
+После установки проверьте, что CUDA видна PyTorch:
+
+```bash
+uv run python -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
+```
+
+Если CUDA-драйвер на машине не совместим с CUDA 12.6, нужно менять индекс в
+`pyproject.toml` на подходящий, например `cu128` или `cu130`, и обновлять оба
+источника для `torch` и `torchvision`.
+
+## 4. Основные библиотеки для lab-4
+
+Основной набор зависимостей уже описан в `pyproject.toml`. Для ноутбука важны:
 
 - `numpy`, `pandas` - работа с данными и таблицами;
 - `scikit-learn` - TF-IDF, train/test split, CV, метрики, LR, LinearSVC, LSA;
@@ -37,14 +87,18 @@ uv pip install jupyter ipykernel spacy tqdm
 - `optuna` - подбор гиперпараметров моделей и TF-IDF внутри `Pipeline`;
 - `spacy` - лемматизация русских отзывов;
 - `tqdm` - прогресс-бары для предобработки;
-- `plotly`, `kaleido` - интерактивные графики и возможность статического экспорта;
+- `plotly`, `kaleido` - интерактивные графики и статический экспорт;
 - `wordcloud` - облака слов, которые затем отображаются через Plotly;
-- `kagglehub` - скачивание CSV, если локальный файл не найден;
+- `kagglehub` - скачивание Kaggle-датасета в формате папок `pos/neg/neu`;
 - `jupyter`, `ipykernel` - запуск ноутбука из uv-окружения.
 
-## 2. Установить русскую модель spaCy
+Не добавляйте эти пакеты через `uv add` перед обычным запуском: они уже должны
+ставиться через `uv sync --dev`. Используйте `uv add` только если осознанно
+меняете зависимости проекта.
 
-После установки `spacy` обязательно скачайте языковую модель:
+## 5. Установить русскую модель spaCy
+
+После `uv sync --dev` скачайте языковую модель:
 
 ```bash
 uv run python -m spacy download ru_core_news_sm
@@ -54,7 +108,7 @@ uv run python -m spacy download ru_core_news_sm
 Эта модель используется для лемматизации, а не для NER или синтаксического
 разбора.
 
-## 3. Подключить uv-окружение как Jupyter kernel
+## 6. Подключить uv-окружение как Jupyter kernel
 
 Чтобы ноутбук точно запускался в нужном окружении:
 
@@ -65,27 +119,49 @@ uv run jupyter lab
 
 В Jupyter выберите kernel `ML_LABS (uv)`.
 
-## 4. Подготовка датасета
+## 7. Подготовка датасета
 
-Ноутбук ожидает итоговый файл здесь:
+Ноутбук работает с настоящим форматом Kaggle-датасета
+`mikhailklemin/kinopoisks-movies-reviews`: внутри архива лежат папки классов
+`pos`, `neg`, `neu`, а каждый отзыв хранится отдельным `.txt`-файлом.
+Имя файла имеет вид:
 
 ```text
-LAB_IV/data/dataset/kinopoisk_reviews.csv
+movie_id-review_id.txt
 ```
 
-В разделе 2.1 ноутбук сам создает директорию `LAB_IV/data/dataset`.
+Например, `306-15.txt` означает отзыв `15` к фильму с id `306`.
+
+В разделе 2.1 ноутбук сам создает директорию:
+
+```text
+LAB_IV/data/dataset
+```
+
 Дальше возможны два сценария:
 
-- если CSV уже лежит в `LAB_IV/data` или `LAB_IV/data/dataset`, он будет скопирован
-  в `LAB_IV/data/dataset/kinopoisk_reviews.csv`;
-- если локального CSV нет, ноутбук попробует скачать датасет
-  `mikhailklemin/kinopoisks-movies-reviews` через `kagglehub`.
+- если вы уже скачали и распаковали датасет вручную, положите папки
+  `pos`, `neg`, `neu` прямо в `LAB_IV/data/dataset`;
+- если этих папок нет, ноутбук попробует скачать датасет сразу в
+  `LAB_IV/data/dataset` через
+  `kagglehub.dataset_download("mikhailklemin/kinopoisks-movies-reviews")`,
+  найти внутри скачанной директории папки `pos/neg/neu` и привести их к
+  ожидаемому расположению.
+  Если установленная версия `kagglehub` не поддерживает `output_dir`, ноутбук
+  использует стандартный cache KaggleHub и затем копирует `pos/neg/neu` в
+  `LAB_IV/data/dataset`.
+
+После этого ноутбук собирает рабочую таблицу:
+
+```text
+LAB_IV/data/dataset/kinopoisk_reviews_prepared.csv
+```
 
 Для скачивания через `kagglehub` нужен доступ в интернет. Если Kaggle попросит
-авторизацию, проще заранее скачать CSV вручную и положить его в
-`LAB_IV/data/dataset/kinopoisk_reviews.csv`.
+авторизацию, проще заранее скачать архив вручную с Kaggle, распаковать его и
+положить папки `pos`, `neg`, `neu` в `LAB_IV/data/dataset`.
 
-## 5. Особенности запуска ноутбука
+## 8. Особенности запуска ноутбука
 
 - Запускайте ноутбук из корня проекта или из `LAB_IV/solution`: код ищет
   директорию `LAB_IV/data` относительно текущего пути.
@@ -104,17 +180,24 @@ LAB_IV/data/dataset/kinopoisk_reviews.csv
 - Графики построены через Plotly. В интерактивном Jupyter они должны открываться
   прямо под ячейками; `kaleido` нужен только для статического экспорта.
 
-## 6. Если uv не может собрать окружение
+## 9. Быстрые проверки после установки
 
-В `pyproject.toml` сейчас указан `requires-python = ">=3.14"`. Для некоторых ML
-пакетов бинарные колеса под Python 3.14 могут появляться позже, чем под Python
-3.12 или 3.13. Если `uv sync` падает именно на совместимости Python-версии,
-проблема не в ноутбуке: нужно запускать проект на версии Python, под которую есть
-колеса `catboost`, `spacy`, `scikit-learn` и `numpy`.
-
-Перед финальным запуском полезно проверить:
+Проверьте импорты:
 
 ```bash
-uv run python -c "import numpy, pandas, sklearn, plotly, wordcloud, optuna, catboost, spacy, kagglehub; print('OK')"
+uv run python -c "import numpy, pandas, sklearn, plotly, wordcloud, optuna, catboost, spacy, kagglehub; print('lab-4 imports OK')"
+```
+
+Проверьте spaCy-модель:
+
+```bash
 uv run python -m spacy validate
 ```
+
+На macOS можно дополнительно проверить, что PyTorch не CUDA-сборка:
+
+```bash
+uv run python -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
+```
+
+Ожидаемо: `torch.cuda.is_available()` вернет `False`.
